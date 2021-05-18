@@ -34,6 +34,10 @@ https://gist.github.com/kingluo/8ccd88b53e9d2878391dbb91ad1f4751
 
 ![Performance](performance.png)
 
+Check the code here:
+
+https://gist.github.com/kingluo/73592448153fcc0e48788a5f9080b3bd
+
 ## Difference between Routerify and Routerify-lite
 
 * Routerify uses `*` to matching anything, but Routerify-lite uses `.*`

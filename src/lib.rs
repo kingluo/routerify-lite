@@ -4,8 +4,8 @@ use hyper::{body::HttpBody, server::conn::AddrStream, service::Service, HeaderMa
 use hyper::{Body, Method, Request, Response};
 use percent_encoding::percent_decode_str;
 use regex::RegexSet;
-use std::fmt::Debug;
-use std::{collections::HashMap, pin::Pin};
+use std::pin::Pin;
+use std::{collections::HashMap, fmt::Debug};
 use std::{convert::Infallible, error::Error as StdError};
 use std::{
     sync::Arc,
@@ -69,6 +69,43 @@ impl<
             Some(ErrHandler::WithInfo(_)) => Some(RequestInfo::new_from_req(&req)),
             _ => None,
         };
+
+        if router.is_plain {
+            let mut k = PathMethod {
+                path: path.clone(),
+                method: Some(req.method().clone()),
+            };
+            let mut i = router.plain.get(&k);
+            if i == None {
+                k.method = None;
+                i = router.plain.get(&k);
+            }
+            if i == None {
+                k.path = "".to_string();
+                i = router.plain.get(&k);
+            }
+            if i == None {
+                unreachable!("no request handler matched");
+            }
+            let i = *i.unwrap();
+            let fut = async move {
+                let route_resp_res = Pin::from(router.handlers[i](req)).await.map_err(Into::into);
+                let route_resp = match route_resp_res {
+                    Ok(route_resp) => route_resp,
+                    Err(err) => {
+                        if let Some(ref err_handler) = router.err_handler {
+                            err_handler.execute(err, req_info).await
+                        } else {
+                            unreachable!(err);
+                        }
+                    }
+                };
+
+                Ok(route_resp)
+            };
+
+            return Box::pin(fut);
+        }
 
         for i in router.regex_set.matches(&path).into_iter() {
             let meta = &router.meta[i];
@@ -260,12 +297,20 @@ impl RequestInfo {
     }
 }
 
+#[derive(Hash, PartialEq, Eq, Debug)]
+struct PathMethod {
+    path: String,
+    method: Option<Method>,
+}
+
 pub struct Router<B, E> {
     meta: Vec<PathMeta>,
     routes: Vec<String>,
     handlers: Vec<Handler<B, E>>,
     err_handler: Option<ErrHandler<B>>,
     regex_set: RegexSet,
+    plain: HashMap<PathMethod, usize>,
+    is_plain: bool,
 }
 
 impl<
@@ -280,7 +325,17 @@ impl<
             handlers: vec![],
             err_handler: None,
             regex_set: RegexSet::empty(),
+            plain: HashMap::new(),
+            is_plain: false,
         }
+    }
+
+    pub fn set_plain(mut self) -> Self {
+        if !self.routes.is_empty() {
+            panic!("set_plain() must be invoked before any route handler get bound");
+        }
+        self.is_plain = true;
+        self
     }
 
     pub fn err_handler<H, R>(mut self, handler: H) -> Self
@@ -318,26 +373,30 @@ impl<
         let mut meta = PathMeta::new();
         meta.method = method;
 
-        let mut res = vec![];
-        for (i, str) in path.split("/").enumerate() {
-            if str == "" {
-                res.push(str);
-                continue;
-            }
-            if str.as_bytes()[0] == b':' {
-                res.push("[^/]+");
+        if self.is_plain {
+            self.meta.push(meta);
+            self.routes.push(path);
+        } else {
+            let mut res = vec![];
+            for (i, str) in path.split("/").enumerate() {
+                if str == "" {
+                    res.push(str);
+                    continue;
+                }
+                if str.as_bytes()[0] == b':' {
+                    res.push("[^/]+");
 
-                meta.sub.push((i, str.chars().skip(1).collect()));
-            } else {
-                res.push(str);
+                    meta.sub.push((i, str.chars().skip(1).collect()));
+                } else {
+                    res.push(str);
+                }
             }
+            self.meta.push(meta);
+
+            let res = res.join("/");
+            let res = format!("^{}$", res);
+            self.routes.push(res);
         }
-
-        self.meta.push(meta);
-
-        let res = res.join("/");
-        let res = format!("^{}$", res);
-        self.routes.push(res);
 
         self.handlers
             .push(Box::new(move |req: Request<hyper::Body>| {
@@ -433,7 +492,11 @@ impl<
         H: Fn(Request<hyper::Body>) -> R + Send + Sync + 'static,
         R: Future<Output = Result<Response<B>, E>> + Send + 'static,
     {
-        self.add("/.*", None, handler)
+        if self.is_plain {
+            self.add("", None, handler)
+        } else {
+            self.add("/.*", None, handler)
+        }
     }
 
     pub fn any_method<H, R, P>(self, path: P, handler: H) -> Self
@@ -446,7 +509,25 @@ impl<
     }
 
     pub fn build(mut self) -> Result<Self, RouteError> {
+        if self.is_plain {
+            return self.build_plain();
+        }
         self.regex_set = RegexSet::new(&self.routes)?;
+        Ok(self)
+    }
+
+    fn build_plain(mut self) -> Result<Self, RouteError> {
+        for (i, r) in self.routes.iter().enumerate() {
+            let path_method = PathMethod {
+                path: r.clone(),
+                method: self.meta[i].method.clone(),
+            };
+            if self.plain.contains_key(&path_method) {
+                continue;
+            }
+            self.plain.insert(path_method, i);
+        }
+
         Ok(self)
     }
 }

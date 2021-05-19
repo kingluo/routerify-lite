@@ -2,9 +2,15 @@
 
 Routerify-lite is a simplified but faster version of [Routerify](https://github.com/routerify/routerify).
 
-It only provides below functions:
-* path matching
+It only provides the below functions:
+* path matching (including `:param` segment captures)
+
+The path matching could be backed by RegexSet or HashMap.
+If your matching pattern is a regular expression, then use RegexSet. Otherwise, HashMap is the best choice.
+
 * error handling
+
+The error handler would translate the request into a response in case of an error from the route handler.
 
 ## Why not Routerify?
 
@@ -30,6 +36,8 @@ https://gist.github.com/kingluo/8ccd88b53e9d2878391dbb91ad1f4751
 
 ## Performance
 
+### Performance 1
+
 `wrk -t2 -c100 -d60s http://test1:8080`
 
 ![Performance](performance.png)
@@ -38,8 +46,18 @@ Check the code here:
 
 https://gist.github.com/kingluo/73592448153fcc0e48788a5f9080b3bd
 
+### Performance 2
+
+Routerify-lite uses plain mode; 50 URI patterns.
+
+`wrk -t2 -c100 -d60s http://test1:8080`
+
+![Performance](performance3.png)
+
+You could see that both plain and regex are better than linear scan.
+
 ## Difference between Routerify and Routerify-lite
 
-* Routerify uses `*` to matching anything, but Routerify-lite uses `.*`
+* Routerify uses `*` to match anything, while Routerify-lite uses `.*`
 * Routerify adds default 404 error response, while Routerify-lite needs the user to add manually
-
+* Routerify-lite has plain mode

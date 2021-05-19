@@ -23,6 +23,7 @@ async fn err_404_handler(_: Request<Body>) -> Result<Response<Body>, Infallible>
 
 fn router() -> Router<Body, Infallible> {
     Router::new()
+        //.set_plain()
         .get("/", |_| async {
             Ok(Response::new(Body::from("Home page")))
         })

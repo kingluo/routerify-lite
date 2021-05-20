@@ -12,6 +12,8 @@ If your matching pattern is a regular expression, then use RegexSet. Otherwise, 
 
 The error handler would translate the request into a response in case of an error from the route handler.
 
+Check the examples here: [examples](./examples)
+
 ## Why not Routerify?
 
 Routerify is an excellent lib! But sometimes it performs not so well.

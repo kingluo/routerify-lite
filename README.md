@@ -61,5 +61,4 @@ You could see that both plain and regex are better than linear scan.
 ## Difference between Routerify and Routerify-lite
 
 * Routerify uses `*` to match anything, while Routerify-lite uses `.*`
-* Routerify adds default 404 error response, while Routerify-lite needs the user to add manually
 * Routerify-lite has plain mode

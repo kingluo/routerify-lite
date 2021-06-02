@@ -1,9 +1,10 @@
 use futures::Future;
 use futures_util::future;
 use hyper::{body::HttpBody, server::conn::AddrStream, service::Service, HeaderMap, Uri, Version};
-use hyper::{Body, Method, Request, Response};
+use hyper::{header, Body, Method, Request, Response, StatusCode};
 use percent_encoding::percent_decode_str;
 use regex::RegexSet;
+use std::any::Any;
 use std::pin::Pin;
 use std::{collections::HashMap, fmt::Debug};
 use std::{convert::Infallible, error::Error as StdError};
@@ -330,6 +331,84 @@ impl<
         }
     }
 
+    fn downcast_to_hyper_body_type(&mut self) -> Option<&mut Router<hyper::Body, E>> {
+        let any_obj: &mut dyn Any = self;
+        any_obj.downcast_mut::<Router<hyper::Body, E>>()
+    }
+
+    fn init_default_404_route(&mut self) {
+        let found = self
+            .routes
+            .iter()
+            .enumerate()
+            .any(|(i, path)| path == "/*" && self.meta[i].method == None);
+
+        if found {
+            return;
+        }
+
+        if let Some(router) = self.downcast_to_hyper_body_type() {
+            let mut meta = PathMeta::new();
+            meta.method = None;
+
+            router.meta.push(meta);
+
+            if router.is_plain {
+                router.routes.push("".to_string())
+            } else {
+                router.routes.push("/.*".to_string())
+            }
+
+            let handler = |_req| async move {
+                Ok(Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .header(header::CONTENT_TYPE, "text/plain")
+                    .body(hyper::Body::from(
+                        StatusCode::NOT_FOUND.canonical_reason().unwrap(),
+                    ))
+                    .expect("Couldn't create the default 404 response"))
+            };
+            router
+                .handlers
+                .push(Box::new(move |req: Request<hyper::Body>| {
+                    Box::new(handler(req))
+                }));
+        }
+    }
+
+    fn init_err_handler(&mut self) {
+        let found = self.err_handler.is_some();
+
+        if found {
+            return;
+        }
+
+        if let Some(router) = self.downcast_to_hyper_body_type() {
+            let handler: ErrHandler<hyper::Body> =
+                ErrHandler::WithoutInfo(Box::new(move |err: RouteError| {
+                    Box::new(async move {
+                        Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .header(header::CONTENT_TYPE, "text/plain")
+                            .body(hyper::Body::from(format!(
+                                "{}: {}",
+                                StatusCode::INTERNAL_SERVER_ERROR
+                                    .canonical_reason()
+                                    .unwrap(),
+                                err
+                            )))
+                            .expect("Couldn't create a response while handling the server error")
+                    })
+                }));
+            router.err_handler = Some(handler);
+        } else {
+            eprintln!(
+                "Warning: No error handler added. It is recommended to add one to see what went wrong if any route or middleware fails.\n\
+                Please add one by calling `.err_handler(handler)` method of the root router builder.\n"
+            );
+        }
+    }
+
     pub fn set_plain(mut self) -> Self {
         if !self.routes.is_empty() {
             panic!("set_plain() must be invoked before any route handler get bound");
@@ -509,10 +588,16 @@ impl<
     }
 
     pub fn build(mut self) -> Result<Self, RouteError> {
+        self.init_default_404_route();
+
+        self.init_err_handler();
+
         if self.is_plain {
             return self.build_plain();
         }
+
         self.regex_set = RegexSet::new(&self.routes)?;
+
         Ok(self)
     }
 

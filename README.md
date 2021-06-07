@@ -5,8 +5,8 @@ Routerify-lite is a simplified but faster version of [Routerify](https://github.
 It only provides the below functions:
 * path matching (including `:param` segment captures)
 
-The path matching could be backed by RegexSet or HashMap.
-If your matching pattern is a regular expression, then use RegexSet. Otherwise, HashMap is the best choice.
+The path matching could be done by RegexSet or HashMap.
+It would use RegexSet if the path contains `*` or `:param`. Otherwise, HashMap would be used.
 
 * error handling
 
@@ -50,15 +50,10 @@ https://gist.github.com/kingluo/73592448153fcc0e48788a5f9080b3bd
 
 ### Performance 2
 
-Routerify-lite uses plain mode; 50 URI patterns.
+Routerify-lite uses HashMap; 50 URI patterns.
 
 `wrk -t2 -c100 -d60s http://test1:8080`
 
 ![Performance](performance3.png)
 
-You could see that both plain and regex are better than linear scan.
-
-## Difference between Routerify and Routerify-lite
-
-* Routerify uses `*` to match anything, while Routerify-lite uses `.*`
-* Routerify-lite has plain mode
+You could see that both HashMap and RegexSet are better than linear scan.

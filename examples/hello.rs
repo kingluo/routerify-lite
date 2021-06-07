@@ -7,8 +7,12 @@ async fn any_method_handler(_req: Request<Body>) -> Result<Response<Body>, Infal
 }
 
 async fn hello_handler(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    let user = req.param("name").unwrap();
-    Ok(Response::new(Body::from(format!("Hello {}", user))))
+    let user = req.param("*").unwrap();
+    let name = req.param("name").unwrap();
+    Ok(Response::new(Body::from(format!(
+        "Hello {:?}, {:?}",
+        user, name
+    ))))
 }
 
 async fn err_404_handler(_: Request<Body>) -> Result<Response<Body>, Infallible> {
@@ -23,11 +27,10 @@ async fn err_404_handler(_: Request<Body>) -> Result<Response<Body>, Infallible>
 
 fn router() -> Router<Body, Infallible> {
     Router::new()
-        //.set_plain()
         .get("/", |_| async {
             Ok(Response::new(Body::from("Home page")))
         })
-        .get("/hello/:name", hello_handler)
+        .get("/hello/*/:name/*", hello_handler)
         .any_method("/any_method", any_method_handler)
         .any(err_404_handler)
         .build()

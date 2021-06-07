@@ -13,3 +13,4 @@ futures = "0.3.14"
 futures-util = "0.3.14"
 tokio = { version = "1", features = ["full"] }
 percent-encoding = "2.1.0"
+lazy_static = "1.4.0"
